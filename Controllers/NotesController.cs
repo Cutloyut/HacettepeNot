@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Firebase.Database;
+using Firebase.Database.Query;
+using Firebase.Storage;
 
 namespace HacettepeNot.API.Controllers
 {
@@ -7,6 +10,9 @@ namespace HacettepeNot.API.Controllers
     public class NotesController : ControllerBase
     {
         private readonly IWebHostEnvironment _env;
+        
+        // Firebase Realtime Database İstemcisi
+        private readonly FirebaseClient _firebaseClient = new("https://hacettepenot-be247-default-rtdb.firebaseio.com/");
 
         public NotesController(IWebHostEnvironment env)
         {
@@ -29,33 +35,39 @@ namespace HacettepeNot.API.Controllers
                 return BadRequest(new { Success = false, Message = "Güvenlik İhlali: Sadece .pdf uzantılı dosyalar kabul edilir." });
             }
 
-            // 3. Sunucuda Depolama Yolu Oluşturma
-            var uploadsFolder = Path.Combine(_env.ContentRootPath, "wwwroot", "uploads");
-            if (!Directory.Exists(uploadsFolder))
-            {
-                Directory.CreateDirectory(uploadsFolder);
-            }
-
+            // 3. Unvan ve Dosya İsmi Oluşturma
             var uniqueFileName = $"{Guid.NewGuid()}{extension}";
-            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await request.File.CopyToAsync(stream);
-            }
 
             // 4. C# AI / OCR İçerik Doğrulama Adımı
-            // Örn: var isAiApproved = await _aiService.ScanPdfContentAsync(filePath, request.CourseCode);
             bool isAiApproved = true; 
 
             if (!isAiApproved)
             {
-                // Uygunsuz ise yüklenen dosyayı sil
-                System.IO.File.Delete(filePath);
                 return BadRequest(new { Success = false, Message = "AI Doğrulaması Başarısız: Dosya içeriği seçilen dersle uyuşmuyor." });
             }
 
-            // 5. Entity Framework ile Veritabanına Kayıt
+            string downloadUrl;
+
+            // 5. Firebase Storage'a Yükleme İşlemi
+            try
+            {
+                using var stream = request.File.OpenReadStream();
+
+                // Firebase Storage bucket adını buraya veriyoruz
+                var task = new FirebaseStorage("hacettepenot-be247.firebasestorage.app")
+                    .Child("uploads")
+                    .Child(uniqueFileName)
+                    .PutAsync(stream);
+
+                // Dosyanın internet üzerinden her yerden erişilebilir kalıcı indirme linkini alıyoruz
+                downloadUrl = await task;
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Success = false, Message = "Firebase Storage yükleme hatası: " + ex.Message });
+            }
+
+            // 6. Firebase Realtime Database İçin Veri Modelini Oluşturma
             var newNoteRecord = new
             {
                 Id = Guid.NewGuid().ToString(),
@@ -63,16 +75,25 @@ namespace HacettepeNot.API.Controllers
                 ContentType = request.ContentType,
                 Title = request.Title,
                 Uploader = request.Uploader,
-                FilePath = $"/uploads/{uniqueFileName}",
+                FilePath = downloadUrl, // <-- Artık doğrudan Firebase Storage'ın internet linki kaydediliyor!
                 CreatedAt = DateTime.UtcNow
             };
 
-            // await _context.Notes.AddAsync(newNoteRecord);
-            // await _context.SaveChangesAsync();
+            // 7. Realtime Database'e Kayıt Atma
+            try
+            {
+                await _firebaseClient
+                    .Child("notes")
+                    .PostAsync(newNoteRecord);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Success = false, Message = "Firebase Veritabanı kayıt hatası: " + ex.Message });
+            }
 
             return Ok(new { 
                 Success = true, 
-                Message = "Dosya C# Backend tarafından doğrulandı ve kaydedildi.", 
+                Message = "Dosya Firebase Storage'a yüklendi ve veritabanına kaydedildi.", 
                 Data = newNoteRecord 
             });
         }
