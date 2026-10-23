@@ -46,11 +46,13 @@ namespace HacettepeNot.API.Controllers
                 return BadRequest(new { Success = false, Message = "AI Doğrulaması Başarısız: Dosya içeriği seçilen dersle uyuşmuyor." });
             }
 
-            string downloadUrl;
+            string downloadUrl = string.Empty;
 
-            // 5. Firebase Storage'a Yükleme İşlemi (Doğru .appspot.com bucket adresi ile)
+            // 5. Firebase Storage'a Yükleme İşlemi (Log takipli)
             try
             {
+                Console.WriteLine("--> Storage yükleme bloğuna girildi. Dosya adı: " + request.File.FileName);
+                
                 using var stream = request.File.OpenReadStream();
 
                 var task = new FirebaseStorage("hacettepenot-be247.appspot.com", new FirebaseStorageOptions
@@ -63,9 +65,12 @@ namespace HacettepeNot.API.Controllers
 
                 // Dosyanın internet üzerinden her yerden erişilebilir kalıcı indirme linkini alıyoruz
                 downloadUrl = await task;
+                
+                Console.WriteLine("--> Storage yükleme BAŞARILI. URL: " + downloadUrl);
             }
             catch (Exception ex)
             {
+                Console.WriteLine("--> STORAGE HATASI: " + ex.ToString());
                 return StatusCode(500, new { Success = false, Message = "Firebase Storage yükleme hatası: " + ex.Message });
             }
 
@@ -90,6 +95,7 @@ namespace HacettepeNot.API.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine("--> DATABASE HATASI: " + ex.ToString());
                 return StatusCode(500, new { Success = false, Message = "Firebase Veritabanı kayıt hatası: " + ex.Message });
             }
 
