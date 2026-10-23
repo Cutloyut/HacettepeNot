@@ -1,0 +1,6 @@
+@HacettepeNot_HostAddress = http://localhost:5042
+
+GET {{HacettepeNot_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
