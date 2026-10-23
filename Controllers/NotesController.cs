@@ -48,13 +48,15 @@ namespace HacettepeNot.API.Controllers
 
             string downloadUrl;
 
-            // 5. Firebase Storage'a Yükleme İşlemi
+            // 5. Firebase Storage'a Yükleme İşlemi (Doğru .appspot.com bucket adresi ile)
             try
             {
                 using var stream = request.File.OpenReadStream();
 
-                // Firebase Storage bucket adını buraya veriyoruz
-                var task = new FirebaseStorage("hacettepenot-be247.firebasestorage.app")
+                var task = new FirebaseStorage("hacettepenot-be247.appspot.com", new FirebaseStorageOptions
+                    {
+                        ThrowOnCancel = true
+                    })
                     .Child("uploads")
                     .Child(uniqueFileName)
                     .PutAsync(stream);
@@ -75,7 +77,7 @@ namespace HacettepeNot.API.Controllers
                 ContentType = request.ContentType,
                 Title = request.Title,
                 Uploader = request.Uploader,
-                FilePath = downloadUrl, // <-- Artık doğrudan Firebase Storage'ın internet linki kaydediliyor!
+                FilePath = downloadUrl, // <-- Firebase Storage'ın kalıcı internet linki kaydediliyor!
                 CreatedAt = DateTime.UtcNow
             };
 
