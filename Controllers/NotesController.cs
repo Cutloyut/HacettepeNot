@@ -10,8 +10,6 @@ namespace HacettepeNot.API.Controllers
     public class NotesController : ControllerBase
     {
         private readonly IWebHostEnvironment _env;
-        
-        // Firebase Realtime Database İstemcisi
         private readonly FirebaseClient _firebaseClient = new("https://hacettepenot-be247-default-rtdb.firebaseio.com/");
 
         public NotesController(IWebHostEnvironment env)
@@ -22,37 +20,37 @@ namespace HacettepeNot.API.Controllers
         [HttpPost("upload")]
         public async Task<IActionResult> UploadNote([FromForm] NoteUploadDto request)
         {
-            // 1. Dosya Var mı Kontrolü
+            // İSTEK GELİR GELMEZ LOG BASILIR (Eğer bu log düşmüyorsa istek C# koduna hiç ulaşmıyordur!)
+            Console.WriteLine("==========================================");
+            Console.WriteLine("==> /api/notes/upload ENDPOINTINE İSTEK GELDİ! <==");
+            Console.WriteLine($"==> Başlık: {request.Title}, Ders: {request.CourseCode}");
+            if (request.File != null)
+            {
+                Console.WriteLine($"==> Gelen Dosya: {request.File.FileName} ({request.File.Length} bayt)");
+            }
+            else
+            {
+                Console.WriteLine("==> ❌ UYARI: Gelen dosya (File) NULL!");
+            }
+            Console.WriteLine("==========================================");
+
             if (request.File == null || request.File.Length == 0)
             {
-                return BadRequest(new { Success = false, Message = "Lütfen geçerli bir dosya seçin." });
+                return BadRequest(new { Success = false, Message = "Lütfen geçerli bir dosya seçin. Dosya null geldi." });
             }
 
-            // 2. Güvenlik & MIME / Uzantı Kontrolü (Sadece PDF)
             var extension = Path.GetExtension(request.File.FileName).ToLowerInvariant();
             if (extension != ".pdf")
             {
                 return BadRequest(new { Success = false, Message = "Güvenlik İhlali: Sadece .pdf uzantılı dosyalar kabul edilir." });
             }
 
-            // 3. Unvan ve Dosya İsmi Oluşturma
             var uniqueFileName = $"{Guid.NewGuid()}{extension}";
-
-            // 4. C# AI / OCR İçerik Doğrulama Adımı
-            bool isAiApproved = true; 
-
-            if (!isAiApproved)
-            {
-                return BadRequest(new { Success = false, Message = "AI Doğrulaması Başarısız: Dosya içeriği seçilen dersle uyuşmuyor." });
-            }
-
             string downloadUrl = string.Empty;
 
-            // 5. Firebase Storage'a Yükleme İşlemi (Log takipli)
             try
             {
-                Console.WriteLine("--> Storage yükleme bloğuna girildi. Dosya adı: " + request.File.FileName);
-                
+                Console.WriteLine("--> Firebase Storage'a yükleme başlatılıyor...");
                 using var stream = request.File.OpenReadStream();
 
                 var task = new FirebaseStorage("hacettepenot-be247.appspot.com", new FirebaseStorageOptions
@@ -63,18 +61,15 @@ namespace HacettepeNot.API.Controllers
                     .Child(uniqueFileName)
                     .PutAsync(stream);
 
-                // Dosyanın internet üzerinden her yerden erişilebilir kalıcı indirme linkini alıyoruz
                 downloadUrl = await task;
-                
-                Console.WriteLine("--> Storage yükleme BAŞARILI. URL: " + downloadUrl);
+                Console.WriteLine($"--> ✅ Storage yükleme BAŞARILI. URL: {downloadUrl}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine("--> STORAGE HATASI: " + ex.ToString());
+                Console.WriteLine($"--> ❌ STORAGE HATASI: {ex}");
                 return StatusCode(500, new { Success = false, Message = "Firebase Storage yükleme hatası: " + ex.Message });
             }
 
-            // 6. Firebase Realtime Database İçin Veri Modelini Oluşturma
             var newNoteRecord = new
             {
                 Id = Guid.NewGuid().ToString(),
@@ -82,20 +77,21 @@ namespace HacettepeNot.API.Controllers
                 ContentType = request.ContentType,
                 Title = request.Title,
                 Uploader = request.Uploader,
-                FilePath = downloadUrl, // <-- Firebase Storage'ın kalıcı internet linki kaydediliyor!
+                FilePath = downloadUrl,
                 CreatedAt = DateTime.UtcNow
             };
 
-            // 7. Realtime Database'e Kayıt Atma
             try
             {
+                Console.WriteLine("--> Realtime Database'e kayıt atılıyor...");
                 await _firebaseClient
                     .Child("notes")
                     .PostAsync(newNoteRecord);
+                Console.WriteLine("--> ✅ Database kayıt BAŞARILI.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine("--> DATABASE HATASI: " + ex.ToString());
+                Console.WriteLine($"--> ❌ DATABASE HATASI: {ex}");
                 return StatusCode(500, new { Success = false, Message = "Firebase Veritabanı kayıt hatası: " + ex.Message });
             }
 
@@ -107,7 +103,6 @@ namespace HacettepeNot.API.Controllers
         }
     }
 
-    // Flutter'dan gelen multipart/form-data modelini karşılayan DTO
     public class NoteUploadDto
     {
         public string CourseCode { get; set; } = string.Empty;
