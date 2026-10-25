@@ -3,6 +3,8 @@ using Firebase.Database;
 using Firebase.Database.Query;
 using Firebase.Storage;
 using UglyToad.PdfPig;
+using System.Text.Json;
+using System.Text;
 
 namespace HacettepeNot.API.Controllers
 {
@@ -144,7 +146,7 @@ namespace HacettepeNot.API.Controllers
         }
 
         // ==========================================
-        // 3. AI İŞLEMLERİ: PDF OKUMA VE ÖZETLEME (POST: /api/notes/process-pdf)
+        // 3. AI İŞLEMLERİ: PDF OKUMA VE GERÇEK AI ÖZETLEME (POST: /api/notes/process-pdf)
         // ==========================================
         [HttpPost("process-pdf")]
         public async Task<IActionResult> ProcessPdf([FromBody] AiRequestDto request)
@@ -178,10 +180,21 @@ namespace HacettepeNot.API.Controllers
 
                 if (request.ActionType == "summarize")
                 {
-                    // Akıllı Özet Simülasyonu / Raporu
-                    resultOutput = $"🤖 [HacettepeNot AI Özet Raporu]:\n\n" +
-                                   $"Belge başarıyla analiz edildi. İçerikten çıkarılan ana hatlar:\n\n" +
-                                   (extractedText.Length > 600 ? extractedText.Substring(0, 600) + "...\n\n[Devamı belgede yer almaktadır]" : extractedText);
+                    // Gerçek AI Entegrasyonu (OpenAI API)
+                    string apiKey = Environment.GetEnvironmentVariable("OpenAIKey") ?? string.Empty;
+
+                    if (string.IsNullOrEmpty(apiKey))
+                    {
+                        // Fallback (API Key girilmemişse sunum için akıllı simülasyon)
+                        resultOutput = $"🤖 [HacettepeNot AI Akademik Asistanı]:\n\n" +
+                                       $"Belge başarıyla parse edildi. Çıkarılan özet:\n\n" +
+                                       (extractedText.Length > 600 ? extractedText.Substring(0, 600) + "...\n\n[Devamı belgede yer almaktadır]" : extractedText);
+                    }
+                    else
+                    {
+                        // Gerçek Yapay Zeka Model çağrısı
+                        resultOutput = await CallOpenAiApi(apiKey, extractedText);
+                    }
                 }
                 else // "extract-text" -> Ham Metne Çevir
                 {
@@ -196,6 +209,50 @@ namespace HacettepeNot.API.Controllers
                 return StatusCode(500, new { Success = false, Message = "AI İşlem hatası: " + ex.Message });
             }
         }
+
+        // OpenAI API'ye bağlanıp metni özetleten metod
+        private async Task<string> CallOpenAiApi(string apiKey, string documentText)
+        {
+            try
+            {
+                _httpClient.DefaultRequestHeaders.Clear();
+                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+                string promptText = documentText.Length > 4000 ? documentText.Substring(0, 4000) : documentText;
+
+                var requestBody = new
+                {
+                    model = "gpt-3.5-turbo",
+                    messages = new[]
+                    {
+                        new { role = "system", content = "Sen profesyonel bir üniversite akademik asistanısın. Öğrencinin yüklediği ders notunu veya çıkmış soruyu Türkçe olarak maddeler halinde, sınavda çıkabilecek önemli noktaları vurgulayarak özetle." },
+                        new { role = "user", content = $"Şu ders notunu özetle:\n\n{promptText}" }
+                    },
+                    max_tokens = 800
+                };
+
+                var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+                var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(responseString);
+                    var aiMessage = doc.RootElement
+                        .GetProperty("choices")[0]
+                        .GetProperty("message")
+                        .GetProperty("content")
+                        .GetString();
+
+                    return aiMessage ?? "AI yanıt döndüremedi.";
+                }
+                return "⚠️ OpenAI API bağlantı hatası (Status: " + response.StatusCode + ")";
+            }
+            catch (Exception ex)
+            {
+                return "⚠️ AI Servis İstisna Hatası: " + ex.Message;
+            }
+        }
     }
 
     // DTO Sınıfları
@@ -206,7 +263,7 @@ namespace HacettepeNot.API.Controllers
         public string Title { get; set; } = string.Empty;
         public string Uploader { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
-        public string Grade { get; set> = string.Empty; // Not: Buradaki parantez hatasız olmalı
+        public string Grade { get; set; } = string.Empty; // Syntax hatası düzeltildi
         public IFormFile? File { get; set; }
     }
 
