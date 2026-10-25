@@ -187,8 +187,8 @@ namespace HacettepeNot.API.Controllers
                     {
                         // Fallback (API Key girilmemişse sunum için akıllı simülasyon)
                         resultOutput = $"🤖 [HacettepeNot AI Akademik Asistanı]:\n\n" +
-                                       $"Belge başarıyla parse edildi. Çıkarılan özet:\n\n" +
-                                       (extractedText.Length > 600 ? extractedText.Substring(0, 600) + "...\n\n[Devamı belgede yer almaktadır]" : extractedText);
+                                     $"Belge başarıyla parse edildi. Çıkarılan özet:\n\n" +
+                                     (extractedText.Length > 600 ? extractedText.Substring(0, 600) + "...\n\n[Devamı belgede yer almaktadır]" : extractedText);
                     }
                     else
                     {
@@ -263,7 +263,7 @@ namespace HacettepeNot.API.Controllers
         public string Title { get; set; } = string.Empty;
         public string Uploader { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
-        public string Grade { get; set; } = string.Empty; // Syntax hatası düzeltildi
+        public string Grade { get; set; } = string.Empty;
         public IFormFile? File { get; set; }
     }
 
